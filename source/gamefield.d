@@ -2,91 +2,128 @@ module gamefield;
 
 private {
     import std.conv: to;
+    import std.range: stride;
 }
 
-//ячейка
-class Ceil {
-    private {
-        short _value;
-        bool _isSelect = false;
-    }
-    int x;
-    int y;
-
-    this(short value) {
-        _value = value;
-    }
-
-    @property
-    short value() {
-        return _value;
-    }
-
-    @property
-    bool isSelect() {
-        return _isSelect;
-    }
-
-    @property
-    void select(bool isSelect) {
-        _isSelect = isSelect;
-    }
-
-    override
-    string toString() {
-        return _value.to!string;
-    }
+private {
+    import artemisd.entity: Entity;
+    import artemisd.world: World;
+    import components;
 }
 
 class GameField {
     private {
-        Ceil[][] _ceils;
-        int _width;
+        Entity[] _ceils;
+        int _sizeW;
+        int _sizeH;
+        int _scale;
+        World _world;
     }
 
-    this(int width) {
-        _width = width;
+    this(int sizeW, int sizeH, int scale) {
+        _sizeW = sizeW;
+        _sizeH = sizeH;
+        _scale = scale;
+    }
+
+    void setWorld(ref World world) {
+        _world = world;
     }
 
     void insertFront(short value) {
-        Ceil ceil = new Ceil(value);
-        if(!_ceils.length || _ceils[$-1].length >= _width) {
-            _ceils ~= [ceil];
-        } else {
-            _ceils[$-1] ~= ceil;
-        }
-        ceil.y = cast(int)_ceils.length;
-        ceil.x = cast(int)_ceils[$-1].length;
+        Entity ceil = _world.createEntity();
+        _ceils ~= ceil;
+
+        int posX = cast(int)((_ceils.length - 1) % _sizeW) + 1;
+        int posY = cast(int)((_ceils.length - 1) / _sizeW) + 1;
+        ceil.addComponent(new Position((posX - 1) * _scale, (posY - 1) * _scale));
+        ceil.addComponent(new Renderer(_scale));
+        ceil.addComponent(new Ceil(value, cast(int)_ceils.length - 1));
+        ceil.addToWorld();
     }
 
     void popFront() {
-        _ceils[$-1] = _ceils[$-1][0..$-1];
-        if(!_ceils[$-1].length)
-            _ceils = _ceils[0..$-1];
+        _ceils = _ceils[0..$-1];
     }
 
     @property
-    Ceil front() {
-        return _ceils[$-1][$-1];
+    Entity front() {
+        return _ceils[$-1];
     }
 
-    void remove(int x, int y) {
-        _ceils[y-1][x-1] = null;
+    void disable(int pos) {
+        if(pos <= _ceils.length) {
+            Entity e = _ceils[pos];
+            Ceil ceil = e.getComponent!Ceil;
+            ceil.isEnabled = false;
+        }
     }
 
-    void set(int x, int y, Ceil ceil) {
-        _ceils[y-1][x-1] = ceil;
+    void enable(int pos) {
+        if(pos <= _ceils.length) {
+            Entity e = _ceils[pos];
+            Ceil ceil = e.getComponent!Ceil;
+            ceil.isEnabled = true;
+        }
     }
 
-    Ceil get(int x, int y) {
-        if (y > _ceils.length)
+    Entity get(int pos) {
+        if(pos > _ceils.length)
             return null;
-        if (x > _ceils[0].length)
-            return null;
-        return _ceils[y-1][x-1];
+        Entity e = _ceils[pos];
+        Ceil ceil = e.getComponent!Ceil;
+        return ceil.isEnabled ? e : null;
     }
 
-    ref Ceil[][] getCeils() {
-        return _ceils;
+    bool isPair(Ceil ceil1, Ceil ceil2) {
+        Ceil maxCeil, minCeil;
+        if(ceil1.pos > ceil2.pos) {
+            maxCeil = ceil1;
+            minCeil = ceil2;
+        } else {
+            maxCeil = ceil2;
+            minCeil = ceil1;
+        }
+
+        Entity[] slice = _ceils[minCeil.pos..maxCeil.pos+1];
+        foreach(ref Entity e ; slice[1..$]) {
+            Ceil c = e.getComponent!Ceil;
+            if(!c.isEnabled)
+                continue;
+            if(c.pos == maxCeil.pos)
+                return true;
+            else
+                break;
+        }
+
+        foreach(ref Entity e ; stride(slice, _sizeW)[1..$]) {
+            Ceil c = e.getComponent!Ceil;
+            if(!c.isEnabled)
+                continue;
+            if(c.pos == maxCeil.pos)
+                return true;
+            else
+                break;
+
+        }
+        return false;
+    }
+
+    @property
+    int scale() {
+        return _scale;
+    }
+
+    @property
+    int countInLine() {
+        return _sizeW;
+    }
+
+    int getWidth() {
+        return _sizeW * _scale;
+    }
+
+    int getHeight() {
+        return _sizeH * _scale;
     }
 }

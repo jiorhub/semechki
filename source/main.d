@@ -4,128 +4,157 @@ private {
     import std.stdio: writeln;
     import std.string: toStringz;
     import std.conv: to;
-    import derelict.sdl2.ttf;
-    import derelict.sdl2.sdl;
-    import gamefield;
-    import command;
-    import application;
 }
 
+private {
+    import artemisd.all;
+    import derelict.sdl2.ttf;
+    import derelict.sdl2.sdl;
+    import components;
+    import systems;
+    import gamefield: GameField;
+}
+
+enum SCREEN_FPS = 60;
+enum SCREEN_TICK_PER_FRAME = 1000 / SCREEN_FPS;
 enum WIDTH_CEIL = 35;
-enum FONT_FILE_NAME = "resource/DroidSans.ttf";
 
-class Game : SDLApplication {
+version(linux) {
+    enum sharedLibSDL = "./lib/libSDL2.so";
+    enum sharedLibSDLTTF = "./lib/libSDL2_ttf.so";
+    enum sharedLibSDLImage = "./lib/libSDL2_image.so";
+}
+
+interface MouseListener {
+    void clickButton(ref SDL_Event event);
+    void upButton(ref SDL_Event event);
+}
+
+interface KeyListener {
+    void keyPressed(ref SDL_Event event);
+    void keyReleased(ref SDL_Event event);
+}
+
+class Application {
     private {
-        Ceil _current;
-        SDL_Texture *numTextures[short];
-        TTF_Font *font = null;
+        MouseListener[] _mouseListeners;
+        KeyListener[] _keyListeners;
+        World _world;
+        SDL_Window* _window;
+        SDL_Renderer *_render;
+        bool _quit;
         GameField _gf;
-        Command[] _commands;
     }
 
-    this(int hCountCeil, string title) {
-        int width = hCountCeil * WIDTH_CEIL;
-        _gf = new GameField(hCountCeil);
-        super(width, width, title);
+    this(uint width, uint height, string title, GameField gf) {
+        DerelictSDL2.load(sharedLibSDL);
+        DerelictSDL2ttf.load(sharedLibSDLTTF);
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            throw new Exception("Failed to init SDL: " ~ SDL_GetError().to!string);
+        }
+        if(TTF_Init() < 0) {
+            throw new Exception("Failed to init TTF: " ~ SDL_GetError().to!string);
+        }
+
+        _window = SDL_CreateWindow(title.toStringz, 100, 100, width, height, SDL_WINDOW_SHOWN);
+        if (_window is null) {
+            throw new Exception("Failed to create window: " ~ SDL_GetError().to!string);
+        }
+        _render = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED);
+        if (_render is null) {
+            throw new Exception("Failed to create render: " ~ SDL_GetError().to!string);
+        }
+
+        _gf = gf;
+        _world = new World();
+        _world.setSystem(new PlayerInputSystem(this));
+        _world.setSystem(new RenderSystem(_render));
+        _world.setSystem(new HudRenderSystem(_render));
+        _world.initialize();
+        _gf.setWorld(_world);
     }
 
-    override
-    void onInit() {
-        SDL_Color fontColor = { 0, 0, 0 };
-        font = TTF_OpenFont(FONT_FILE_NAME, 22);
-        if(font is null){
-            throw new Exception("Failed to load font: " ~ FONT_FILE_NAME ~ " " ~ TTF_GetError().to!string);
-        }
-        foreach(short n; 1..10) {
-            SDL_Surface *surf = TTF_RenderText_Blended(font, toStringz(n.to!string), fontColor);
-            SDL_Texture *texture = SDL_CreateTextureFromSurface(_render, surf);
-            numTextures[n] = texture;
-            SDL_FreeSurface(surf);
-        }
-        TTF_CloseFont(font);
+    void run() {
+        SDL_Event event;
+        uint currentTime;
+        uint lastTime;
+        uint elapsedTime;
 
-        initGame();
-        addUpdateFunction(&this.drawGameField);
-        addEventFunction(&this.mouseEvent);
+        _quit = false;
+        while(!_quit) {
+            currentTime = SDL_GetTicks();
+            elapsedTime = currentTime - lastTime;
+            lastTime = currentTime;
+
+            while(SDL_PollEvent(&event)) {
+                switch (event.type) {
+                    case SDL_QUIT:
+                        _quit = true;
+                        break;
+                    case SDL_MOUSEBUTTONDOWN:
+                        foreach(listener ; _mouseListeners)
+                            listener.clickButton(event);
+                        break;
+                    case SDL_MOUSEBUTTONUP:
+                        foreach(listener ; _mouseListeners)
+                            listener.upButton(event);
+                        break;
+                    case SDL_KEYUP:
+                        foreach(listener ; _keyListeners)
+                            listener.keyReleased(event);
+                    case SDL_KEYDOWN:
+                        if(event.key.keysym.unicode > 0) {
+                            foreach(listener ; _keyListeners)
+                                listener.keyPressed(event);
+                        }
+                    default:
+                        break;
+                }
+            }
+
+            SDL_SetRenderDrawColor(_render, 248, 248, 248, 255);
+            SDL_RenderClear(_render);
+            _world.setDelta(SCREEN_TICK_PER_FRAME);
+            _world.process();
+            SDL_RenderPresent(_render);
+
+            uint frameTicks = SDL_GetTicks() - currentTime;
+            if(frameTicks < SCREEN_TICK_PER_FRAME ) {
+                SDL_Delay( SCREEN_TICK_PER_FRAME - frameTicks );
+            }
+        }
+    }
+
+    void exit() {
+        _quit = true;
+    }
+
+    void addMouseListener(MouseListener listener) {
+        _mouseListeners ~= listener;
+    }
+
+    void addKeyListener(KeyListener listener) {
+        _keyListeners ~= listener;
+    }
+
+    GameField getGameField() {
+        return _gf;
     }
 
     void initGame() {
         foreach(short val ; 1..10) {
-            _gf.insertFront(val);
+            _gf.insertFront(1);
         }
         foreach(short val ; 1..10) {
             _gf.insertFront(1);
             _gf.insertFront(val);
         }
     }
-
-    void drawGameField() {
-        SDL_SetRenderDrawColor(_render, 102, 102, 102, 255);
-        SDL_Rect rectangle = {
-                w: WIDTH_CEIL,
-                h: WIDTH_CEIL
-            };
-        SDL_Rect rectFont;
-        foreach(int y, ref Ceil[] line; _gf.getCeils()) {
-            rectangle.y = y * WIDTH_CEIL;
-            rectFont.y = y * WIDTH_CEIL + 5;
-            foreach(int x, Ceil ceil; line) {
-                rectangle.x = x * WIDTH_CEIL;
-                rectFont.x = x * WIDTH_CEIL + 10;
-                if (ceil !is null && ceil.isSelect) {
-                    SDL_SetRenderDrawColor(_render, 231, 246, 145, 255);
-                    SDL_RenderFillRect(_render, &rectangle);
-                }
-                SDL_SetRenderDrawColor(_render, 102, 102, 102, 255);
-                SDL_RenderDrawRect(_render, &rectangle);
-                if(ceil !is null) {
-                    SDL_Texture *tex = numTextures[ceil.value];
-                    SDL_QueryTexture(tex, null, null, &rectFont.w, &rectFont.h);
-                    SDL_RenderCopy(_render, tex, null, &rectFont);
-                }
-            }
-        }
-        SDL_SetRenderDrawColor(_render, 255, 255, 255, 255);
-    }
-
-    void mouseEvent(SDL_Event event) {
-        if(event.type == SDL_MOUSEBUTTONDOWN) {
-            int x = event.motion.x / WIDTH_CEIL + 1;
-            int y = event.motion.y / WIDTH_CEIL + 1;
-            Ceil ceil = _gf.get(x, y);
-            if (ceil !is null) {
-                ceil.select(true);
-            }
-        }
-
-        if(event.type == SDL_MOUSEBUTTONUP) {
-            int x = event.motion.x / WIDTH_CEIL + 1;
-            int y = event.motion.y / WIDTH_CEIL + 1;
-            Ceil ceil = _gf.get(x, y);
-            if(ceil !is null) {
-                if(_current is null) {
-                    _current = ceil;
-                } else {
-                    _current.select(false);
-                    ceil.select(false);
-                    if(_current.value == ceil.value || (_current.value + ceil.value) == 10) {
-                        Command com1 = new ChangeCeilCommand(_gf, _current.x, _current.y, null);
-                        Command com2 = new ChangeCeilCommand(_gf, ceil.x, ceil.y, null);
-                        com1.execute();
-                        com2.execute();
-                        _commands ~= com1;
-                        _commands ~= com2;
-                    }
-                    _current = null;
-                }
-            }
-        }
-    }
 }
 
-
 void main() {
-    DerelictSDL2.load();
-    Game game = new Game(9, "Семечки");
-    game.start();
+    GameField gf = new GameField(9, 15, WIDTH_CEIL);
+    Application app = new Application(gf.getWidth(), gf.getHeight, "Семечки", gf);
+    app.initGame();
+    app.run();
 }
