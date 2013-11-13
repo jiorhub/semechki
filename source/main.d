@@ -70,6 +70,7 @@ class Application {
         _world.setSystem(new PlayerInputSystem(this));
         _world.setSystem(new RenderSystem(_render));
         _world.setSystem(new HudRenderSystem(_render));
+        _world.setSystem(new MovementSystem(_gf));
         _world.initialize();
         _gf.setWorld(_world);
     }

@@ -4,4 +4,5 @@ public {
     import components.position: Position;
     import components.renderer: Renderer;
     import components.ceil: Ceil;
+    import components.velocity: Velocity;
 }

@@ -62,6 +62,8 @@ void main() {
     }
 
     command.put("-unittest");
+    command.put("-g");
+    command.put("-debug");
 
     writeln(command.data);
     auto pid = spawnProcess(command.data);

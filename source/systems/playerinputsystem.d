@@ -72,17 +72,23 @@ class PlayerInputSystem : EntitySystem, MouseListener, KeyListener {
                     ceil.isSelect = false;
                     if(curCeil.value == ceil.value || (curCeil.value + ceil.value) == 10) {
                         if(_gf.isPair(ceil, curCeil)) {
-                            Command c1 = new DisableCeilCommand(_gf, ceil.pos);
-                            c1.execute();
-                            _commands ~= c1;
-                            Command c2 = new DisableCeilCommand(_gf, curCeil.pos);
-                            c2.execute();
-                            _commands ~= c2;
+                            Command c = new MultiDisableCeilCommand(_gf, ceil.pos, curCeil.pos);
+                            c.execute();
+                            _commands ~= c;
                         }
                     }
                 }
                 _current = null;
             }
+        }
+        if (e !is null && event.button.button == SDL_BUTTON_RIGHT) {
+            Ceil ceil = e.getComponent!Ceil;
+            if(_current !is null) {
+                Ceil curCeil = _current.getComponent!Ceil;
+                if(ceil.pos == curCeil.pos) {
+                    _current = null;
+                }
+            }      
         }
     }
 
@@ -98,6 +104,12 @@ class PlayerInputSystem : EntitySystem, MouseListener, KeyListener {
                     c.unexecute();
                     _commands = _commands[0..$-1];
                 }
+                break;
+            case SDLK_KP_PLUS:
+                short[] values = _gf.getAllValues();
+                Command comm = new MultiInsertCommand(_gf, values);
+                comm.execute();
+                _commands ~= comm;
                 break;
             default:
                 break;

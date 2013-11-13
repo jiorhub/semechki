@@ -39,10 +39,13 @@ class GameField {
         ceil.addComponent(new Position((posX - 1) * _scale, (posY - 1) * _scale));
         ceil.addComponent(new Renderer(_scale));
         ceil.addComponent(new Ceil(value, cast(int)_ceils.length - 1));
+        ceil.addComponent(new Velocity(0, -0.01));
         ceil.addToWorld();
     }
 
     void popFront() {
+        Entity ceil = _ceils[$-1];
+        ceil.deleteFromWorld();
         _ceils = _ceils[0..$-1];
     }
 
@@ -125,5 +128,15 @@ class GameField {
 
     int getHeight() {
         return _sizeH * _scale;
+    }
+
+    short[] getAllValues() {
+        short[] result;
+        foreach(Entity e ; _ceils) {
+            Ceil ceil = e.getComponent!Ceil;
+            if (ceil.isEnabled)
+                result ~= ceil.value;
+        }
+        return result;
     }
 }
